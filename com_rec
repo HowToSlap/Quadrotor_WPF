@@ -1,0 +1,88 @@
+        void ComRec()//接收线程，窗口初始化中就开始启动运行
+        {
+            int index = 0;
+            int NumofRef = 0;
+            int NumofTag = 0;
+            int NumofHead = 0;
+            int[] SucCount = { 0, 0, 0, 0, 0 };
+            int[] FailCount = { 0, 0, 0, 0, 0 };
+            while (true)//一直查询串口接收线程中是否有新数据
+            {
+                if (recQueue.Count > 0)//当串口接收线程中有新的数据时候，队列中有新进的成员recQueue.Count > 0
+                {
+                    int Px, Py, Pz;
+                    string recData;//接收数据转码后缓存
+                    byte[] recBuffer = (byte[])recQueue.Dequeue();//出列Dequeue（全局）
+                    recData = System.Text.Encoding.Default.GetString(recBuffer);//转码
+                    UIAction(() =>
+                    {
+                        if (recModeCheck.IsChecked == false)//接收模式为ASCII文本模式
+                        {
+                            recTBox.Text += recData.ToString();//加显到接收区
+                        }
+                        else
+                        {
+                            StringBuilder recBuffer16 = new StringBuilder();//定义16进制接收缓存
+                            for (int i = 0; i < recBuffer.Length; i++)
+                            {
+                                recBuffer16.AppendFormat("{0:X2}" + " ", recBuffer[i]);//X2表示十六进制格式（大写），域宽2位，不足的左边填0。
+                            }
+                            index = 0;
+                            #region 处理COM口数据
+                            if (recBuffer[index] == 0x55)
+                            {
+                                index++;
+                                if (recBuffer[index] == 0xaa)
+                                {
+                                    index++;
+                                    switch (recBuffer[index])
+                                    {
+                                        case 0x01:
+                                            recTBox.Text += "\n簇头正发送广播";
+                                            break;
+                                        case 0x02:
+                                            recTBox.Text += "\n正接受其他簇头数据";
+                                            break;
+                                        case 0x03:
+                                            recTBox.Text += "\n正在定位";
+                                            index++; index++;
+                                            NumofHead = recBuffer[index++];
+                                            NumofRef = recBuffer[index++];
+                                            index++;
+                                            NumofTag = recBuffer[index++];
+                                            recTBox.Text += "\n簇头" + NumofHead + "的参考节点" + NumofRef + "正对标签" + NumofTag;
+                                            if (recBuffer[3] == 0x00)
+                                            {
+                                                recTBox.Text += "收数据";
+                                                recTBox.Text += "\n距离为" + ((int)(recBuffer[8] * 256) + (int)(recBuffer[9]));
+                                                SucCount[NumofTag - 1]++;
+                                                break;
+                                            }
+                                            else if (recBuffer[3] == 0x01)
+                                            { recTBox.Text += "发送数据"; }
+                                            else if (recBuffer[3] == 0x02)
+                                            {
+                                                recTBox.Text += "\n测距状态：";
+                                                FailCount[NumofTag - 1]++;
+                                                if (recBuffer[8] == 0x00)
+                                                { recTBox.Text += "测距超时"; break; }
+                                                else if (recBuffer[8] == 0x01)
+                                                { recTBox.Text += "测距失败，全为ff"; break; }
+                                                else if (recBuffer[8] == 0x02)
+                                                { recTBox.Text += "测距失败，数据格式错误"; break; }
+                                            }
+                                            break;
+                                        case 0x04:
+                                            recTBox.Text += "\n发送本簇数据给其他簇";
+                                            break;
+                                        case 0x05:
+                                            Px = process(0, recBuffer);
+                                            Py = process(2, recBuffer);
+                                            Pz = process(4, recBuffer);
+                                            recTBox.Text += "\n三维坐标为：";
+                                            recTBox.Text += "(" + Px.ToString() + "," + Py.ToString() + "," + Pz.ToString() + ")";
+                                            break;
+                                        default: break;
+                                    }
+                                }
+                            }
